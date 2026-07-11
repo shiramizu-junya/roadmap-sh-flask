@@ -1,0 +1,45 @@
+# ===== 秘密情報（絶対にコミットしない） =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== Python / uv =====
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+# Flask の instance フォルダ（ローカル設定など）
+instance/
+
+# ===== Node / React (Vite) =====
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+*.local
+
+# ===== Docker =====
+# ローカル専用の上書き設定は共有しない
+docker-compose.override.yml
+
+# ===== エディタ / OS =====
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# ===== ログ =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
