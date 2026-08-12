@@ -1,6 +1,8 @@
 import os
 
-from flask import Flask
+from flask import Flask, Response, jsonify
+from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 
 def create_app(test_config: dict | None = None) -> Flask:
@@ -34,5 +36,19 @@ def create_app(test_config: dict | None = None) -> Flask:
     from . import models
 
     models.init_app(app)
+
+    # React(5173) から Cookie 付きリクエストを許可する
+    # 🔁 置き換え: 元記事は同一オリジンなので CORS 不要だった
+    CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+
+    # abort(404) などの HTTP 例外を JSON に統一して返す
+    # 🔁 置き換え: 元記事はエラーページ(HTML)を返していた
+    @app.errorhandler(HTTPException)
+    def handle_http_exception(e: HTTPException) -> tuple[Response, int]:
+        return jsonify(error=e.description), e.code or 500
+
+    from . import auth
+
+    app.register_blueprint(auth.bp)
 
     return app
