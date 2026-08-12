@@ -11,7 +11,7 @@
 > **補足: ルート設計**（`/posts` を一覧・作成に、`/posts/<id>` を取得・更新・削除に割り当てる REST 的な形）。
 
 🔁 **置き換え**:
-- 元記事は一覧取得で `JOIN user ... ORDER BY created DESC` を手書き → SQLAlchemy の `Post.query.order_by(...)` ＋ `to_dict()` で著者名込みの JSON にする
+- 元記事は一覧取得で `JOIN user ... ORDER BY created DESC` を手書き → SQLAlchemy の `db.session.scalars(db.select(Post).order_by(...))` ＋ `to_dict()` で著者名込みの JSON にする
 - 元記事の `@bp.route('/<int:id>/update')`（更新用ページ）は **`PUT /posts/<id>`** に、`/<id>/delete` は **`DELETE /posts/<id>`** に置き換え（HTTP メソッドで操作を表現するのが REST）
 - 元記事の `app.add_url_rule('/', endpoint='index')` という小技は**不要**（`url_for` リダイレクトを使わないため）
 
@@ -44,7 +44,7 @@
 > ヒント（考え方のみ）:
 > - `login_required` は Step3 で作った。`@bp.post(...)` の下に重ねて付ける（デコレータの順序: `@bp.route` が外側、`@login_required` が内側）
 > - 更新/削除は先頭で `post = get_post(id)` を呼ぶだけで、404・403・ログイン判定がまとまる
-> - 一覧は `Post.query.order_by(Post.created.desc()).all()` → 各要素を `to_dict()`
+> - 一覧は `db.session.scalars(db.select(Post).order_by(Post.created.desc())).all()` → 各要素を `to_dict()`
 > - JSON ボディは `request.get_json(silent=True) or {}`（Step3 と同じ）
 
 まず自分で書いてみましょう。書けたら下を開いて照合してください。
@@ -61,7 +61,7 @@ from .models import db, Post
 bp = Blueprint("blog", __name__, url_prefix="/posts")
 
 
-def get_post(id, check_author=True):
+def get_post(id: int, check_author: bool = True) -> Post:
     """id の記事を取得。無ければ 404、著者違いなら 403。"""
     post = db.session.get(Post, id)
 
@@ -76,7 +76,7 @@ def get_post(id, check_author=True):
 
 @bp.get("")           # GET /posts
 def index():
-    posts = Post.query.order_by(Post.created.desc()).all()
+    posts = db.session.scalars(db.select(Post).order_by(Post.created.desc())).all()
     return jsonify([p.to_dict() for p in posts])
 
 
@@ -97,14 +97,14 @@ def create():
 
 
 @bp.get("/<int:id>")  # GET /posts/<id>
-def show(id):
+def show(id: int):
     post = get_post(id, check_author=False)
     return jsonify(post.to_dict())
 
 
 @bp.put("/<int:id>")  # PUT /posts/<id>
 @login_required
-def update(id):
+def update(id: int):
     post = get_post(id)                 # 404/403 をここで処理
     data = request.get_json(silent=True) or {}
     title = data.get("title")
@@ -121,7 +121,7 @@ def update(id):
 
 @bp.delete("/<int:id>")  # DELETE /posts/<id>
 @login_required
-def delete(id):
+def delete(id: int):
     post = get_post(id)                 # 404/403 をここで処理
     db.session.delete(post)
     db.session.commit()

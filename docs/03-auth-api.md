@@ -40,7 +40,7 @@ from werkzeug.exceptions import HTTPException
     # abort(404) などの HTTP 例外を JSON に統一して返す
     # 🔁 置き換え: 元記事はエラーページ(HTML)を返していた
     @app.errorhandler(HTTPException)
-    def handle_http_exception(e):
+    def handle_http_exception(e: HTTPException):
         return jsonify(error=e.description), e.code
 
     from . import auth
@@ -55,6 +55,8 @@ from werkzeug.exceptions import HTTPException
 
 ```python
 import functools
+from collections.abc import Callable
+from typing import Any
 
 from flask import Blueprint, g, jsonify, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -66,7 +68,7 @@ bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 @bp.before_app_request
-def load_logged_in_user():
+def load_logged_in_user() -> None:
     """全リクエストの前に走り、ログイン中ユーザーを g.user に載せる。"""
     user_id = session.get("user_id")
     if user_id is None:
@@ -75,10 +77,10 @@ def load_logged_in_user():
         g.user = db.session.get(User, user_id)
 
 
-def login_required(view):
+def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
     """未ログインなら 401 を返すデコレータ（Step4 の記事操作で使う）。"""
     @functools.wraps(view)
-    def wrapped_view(**kwargs):
+    def wrapped_view(**kwargs: Any) -> Any:
         # TODO(1): g.user が None なら {"error": "Login required."} を 401 で返す
         ...
         return view(**kwargs)
@@ -96,7 +98,7 @@ def register():
         return jsonify(error="Username is required."), 400
     if not password:
         return jsonify(error="Password is required."), 400
-    if User.query.filter_by(username=username).first() is not None:
+    if db.session.scalar(db.select(User).filter_by(username=username)) is not None:
         return jsonify(error=f"User {username} is already registered."), 400
 
     user = User(username=username, password=generate_password_hash(password))
@@ -111,7 +113,7 @@ def login():
     username = data.get("username")
     password = data.get("password")
 
-    user = User.query.filter_by(username=username).first()
+    user = db.session.scalar(db.select(User).filter_by(username=username))
     # TODO(2): user が None なら "Incorrect username." を 400 で返す
     # TODO(3): check_password_hash(user.password, password) が False なら
     #          "Incorrect password." を 400 で返す
@@ -140,7 +142,7 @@ def me():
 
 ```python
 # TODO(1)
-    def wrapped_view(**kwargs):
+    def wrapped_view(**kwargs: Any) -> Any:
         if g.user is None:
             return jsonify(error="Login required."), 401
         return view(**kwargs)

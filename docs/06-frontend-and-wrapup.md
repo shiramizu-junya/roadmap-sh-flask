@@ -268,11 +268,11 @@ from flask import request  # 既に import 済み
 
 @bp.get("")
 def index():
-    query = Post.query.order_by(Post.created.desc())
-    limit = request.args.get("limit", type=int)
+    query = db.select(Post).order_by(Post.created.desc())
+    limit: int | None = request.args.get("limit", type=int)
     if limit is not None:
         query = query.limit(limit)
-    return jsonify([p.to_dict() for p in query.all()])
+    return jsonify([p.to_dict() for p in db.session.scalars(query).all()])
 ```
 </details>
 
@@ -308,9 +308,9 @@ curl -s -X POST http://127.0.0.1:5000/auth/login \
 @bp.put("/password")
 @login_required
 def change_password():
-    data = request.get_json(silent=True) or {}
-    old = data.get("old_password", "")
-    new = data.get("new_password", "")
+    data: dict = request.get_json(silent=True) or {}
+    old: str = data.get("old_password", "")
+    new: str = data.get("new_password", "")
 
     if not check_password_hash(g.user.password, old):
         return jsonify(error="Incorrect password."), 400
@@ -345,18 +345,18 @@ from sqlalchemy import or_
 
 @bp.get("")
 def index():
-    query = Post.query.order_by(Post.created.desc())
+    query = db.select(Post).order_by(Post.created.desc())
 
-    q = request.args.get("q")
+    q: str | None = request.args.get("q")
     if q:
         like = f"%{q}%"
-        query = query.filter(or_(Post.title.ilike(like), Post.body.ilike(like)))
+        query = query.where(or_(Post.title.ilike(like), Post.body.ilike(like)))
 
-    limit = request.args.get("limit", type=int)
+    limit: int | None = request.args.get("limit", type=int)
     if limit is not None:
         query = query.limit(limit)
 
-    return jsonify([p.to_dict() for p in query.all()])
+    return jsonify([p.to_dict() for p in db.session.scalars(query).all()])
 ```
 </details>
 
@@ -406,21 +406,25 @@ curl -s http://127.0.0.1:5000/posts/1/comments
 
 **flaskr/models.py に追記:**
 ```python
-class Comment(db.Model):
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Comment(Base):
     __tablename__ = "comment"
 
-    id = db.Column(db.Integer, primary_key=True)
-    post_id = db.Column(db.Integer, db.ForeignKey("post.id"), nullable=False)
-    author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    body = db.Column(db.Text, nullable=False)
-    created = db.Column(
-        db.DateTime, nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(db.ForeignKey("post.id"))
+    author_id: Mapped[int] = mapped_column(db.ForeignKey("user.id"))
+    body: Mapped[str] = mapped_column(db.Text)
+    created: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
-    author = db.relationship("User")
+    author: Mapped[User] = relationship()
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             "id": self.id,
             "post_id": self.post_id,
@@ -436,7 +440,7 @@ class Comment(db.Model):
 from .models import db, Post, Comment  # import に Comment を追加
 
 
-def get_comment(id, check_author=True):
+def get_comment(id: int, check_author: bool = True) -> Comment:
     comment = db.session.get(Comment, id)
     if comment is None:
         abort(404, f"Comment id {id} doesn't exist.")
@@ -446,18 +450,19 @@ def get_comment(id, check_author=True):
 
 
 @bp.get("/<int:id>/comments")
-def list_comments(id):
+def list_comments(id: int):
     get_post(id, check_author=False)          # 記事が無ければ 404
-    comments = (Comment.query
-                .filter_by(post_id=id)
-                .order_by(Comment.created.desc())
-                .all())
+    comments = db.session.scalars(
+        db.select(Comment)
+        .filter_by(post_id=id)
+        .order_by(Comment.created.desc())
+    ).all()
     return jsonify([c.to_dict() for c in comments])
 
 
 @bp.post("/<int:id>/comments")
 @login_required
-def create_comment(id):
+def create_comment(id: int):
     get_post(id, check_author=False)          # 記事が無ければ 404
     data = request.get_json(silent=True) or {}
     body = data.get("body")
@@ -474,7 +479,7 @@ def create_comment(id):
 # ここでは同 blueprint(url_prefix="/posts")の外に出すため add_url_rule を使わず、素直に別ルートにする:
 @bp.delete("/comments/<int:id>")              # 実際の URL は /posts/comments/<id>
 @login_required
-def delete_comment(id):
+def delete_comment(id: int):
     comment = get_comment(id)
     db.session.delete(comment)
     db.session.commit()
@@ -486,23 +491,26 @@ def delete_comment(id):
 
 **tests/test_comment.py:**
 ```python
+from flask import Flask
+from flask.testing import FlaskClient
+
 from flaskr.models import db, Comment
 
 
-def test_create_comment(client, auth, app):
+def test_create_comment(client: FlaskClient, auth, app: Flask) -> None:
     auth.login()
     res = client.post("/posts/1/comments", json={"body": "nice"})
     assert res.status_code == 201
     with app.app_context():
-        assert Comment.query.count() == 1
+        assert db.session.scalar(db.select(db.func.count()).select_from(Comment)) == 1
 
 
-def test_comment_login_required(client):
+def test_comment_login_required(client: FlaskClient) -> None:
     res = client.post("/posts/1/comments", json={"body": "x"})
     assert res.status_code == 401
 
 
-def test_delete_others_comment_forbidden(client, auth, app):
+def test_delete_others_comment_forbidden(client: FlaskClient, auth, app: Flask) -> None:
     # test がコメント投稿
     auth.login()
     cid = client.post("/posts/1/comments", json={"body": "mine"}).get_json()["id"]
@@ -520,14 +528,17 @@ def test_delete_others_comment_forbidden(client, auth, app):
 
 ## 6-6. 発展（次に学ぶとよいこと）
 
+- 🚀 **[Step 7: OpenAPI/Swagger UI（APIFlask）& 管理画面（Flask-Admin）](./07-openapi-and-admin.md)** ← このリポジトリに用意済みの発展編。下記の「Marshmallow」と管理画面を実際に組み込みます
 - **JWT / トークン認証**: セッション Cookie の代わりにトークンを使う SPA/モバイル向け認証。`Flask-JWT-Extended`
-- **Marshmallow / Pydantic**: 入力バリデーションと `to_dict()` の自動化（スキーマ駆動）。手書きの検証を置き換えられる
+- **Marshmallow / Pydantic**: 入力バリデーションと `to_dict()` の自動化（スキーマ駆動）→ Step 7 で APIFlask として実践
 - **Flask-Migrate（Alembic）**: モデル変更を `drop_all` せずマイグレーションで反映（本番の DB を壊さず更新）
-- **ページネーション**: `Post.query.paginate(page, per_page)` で大量データに対応
+- **ページネーション**: `db.paginate(db.select(Post), page=page, per_page=per_page)` で大量データに対応
 - **Blueprint の分割拡大**: `api/v1` のようにバージョニング、`create_app` でのファクトリパターンの発展
 - **本番運用**: `gunicorn`/`waitress` + リバースプロキシ、環境変数での設定管理、ロギング
 - **フロント本格化**: React Router でルーティング、認証状態のグローバル管理（Context/Zustand）、フォームの `react-hook-form`
 
 お疲れさまでした。上から順に進めたなら、元記事の全トピック（ファクトリ / DB / Blueprint / 認証 / CRUD / 認可 / テスト / デプロイ）を、実務スタックで再現できたはずです 🎉
+
+さらに実務に近づけるなら [Step 7（発展編）](./07-openapi-and-admin.md) へ。
 
 ← [目次に戻る](./README.md)

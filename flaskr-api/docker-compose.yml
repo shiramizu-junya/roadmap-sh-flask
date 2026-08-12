@@ -1,0 +1,33 @@
+services:
+    db: # 「db」という名前のサービス(コンテナ)を1つ定義
+        image: mysql:8.0 # MySQL 8.0 の公式イメージを使う
+        ports:
+            - "3306:3306" # PCの3306 → コンテナの3306 につなぐ
+        environment: # MySQL の初期設定を環境変数で渡す
+            MYSQL_ROOT_PASSWORD: root # 管理者(root)のパスワード
+            MYSQL_DATABASE: flaskr # 起動時に作るDB名（本番用）
+            MYSQL_USER: flaskr # アプリが使うユーザー名
+            MYSQL_PASSWORD: flaskr # そのユーザーのパスワード
+        command: # 文字コードを絵文字対応(utf8mb4)にする
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_unicode_ci
+        volumes:
+            - mysql_data:/var/lib/mysql # DBの中身を「mysql_data」ボリュームに永続化
+            - ./docker/initdb:/docker-entrypoint-initdb.d # 初回起動時に実行するSQL置き場
+        healthcheck: # MySQLが「本当に受付可能」かを判定する設定
+            test:
+                [
+                    "CMD",
+                    "mysqladmin",
+                    "ping",
+                    "-h",
+                    "localhost",
+                    "-uflaskr",
+                    "-pflaskr",
+                ]
+            interval: 5s
+            timeout: 3s
+            retries: 20
+
+volumes:
+    mysql_data: # 上で使った永続ボリュームの宣言

@@ -35,6 +35,7 @@ docker-compose.override.yml
 .DS_Store
 .vscode/
 .idea/
+.zed/
 *.swp
 *~
 

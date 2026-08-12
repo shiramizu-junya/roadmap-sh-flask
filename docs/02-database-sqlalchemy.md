@@ -21,7 +21,7 @@ DB のテーブルを **SQLAlchemy のモデルクラス**で定義し、`flask 
 | `sqlite3.Row` で dict 風に読む | モデル属性 `post.title` で読む → `to_dict()` で JSON 化 |
 | DB ファイル自体を `init_db` が作る | **DB(`flaskr`)は Docker が作成済み**。`init-db` は**テーブル**だけ作る |
 
-> ⚠️ **MySQL 特有の重要ポイント**: MySQL の文字列カラム（`VARCHAR`）は**必ず最大長が必要**です。SQLite は `db.String`（長さ無し）でも動きましたが、MySQL では**長さを指定しないとエラー**になります。そこでこのステップでは `db.String(80)` のように**長さを付けます**（下のコードで明示）。これが SQLite → MySQL で一番ハマりやすい差分です。
+> ⚠️ **MySQL 特有の重要ポイント**: MySQL の文字列カラム（`VARCHAR`）は**必ず最大長が必要**です。SQLite は `db.String`（長さ無し）でも動きましたが、MySQL では**長さを指定しないとエラー**になります。そこでこのステップでは `mapped_column(db.String(80))` のように**長さを付けます**（下のコードで明示）。これが SQLite → MySQL で一番ハマりやすい差分です。
 
 前半（`User`）は写経、後半（`Post`）は一部 `# TODO` を自分で埋めます。
 
@@ -34,60 +34,69 @@ DB のテーブルを **SQLAlchemy のモデルクラス**で定義し、`flask 
 `flaskr/models.py` を新規作成:
 
 ```python
-from datetime import datetime, timezone
+from __future__ import annotations
+
+from datetime import UTC, datetime
 
 import click
+from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-
-# 拡張オブジェクト。まだアプリには結び付けない（ファクトリで init_app する）
-db = SQLAlchemy()
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
-class User(db.Model):
+# 全モデルの共通の親。DeclarativeBase を直接継承すると、型チェッカーが
+# コンストラクタ（User(username=...) 等）まで型を効かせられる
+class Base(DeclarativeBase):
+    pass
+
+
+# 拡張オブジェクト。model_class に Base を渡して結び付ける
+db = SQLAlchemy(model_class=Base)
+
+
+class User(Base):
     __tablename__ = "user"
 
-    id = db.Column(db.Integer, primary_key=True)
-    # ユーザー名は一意・必須（MySQL なので長さ必須。80文字まで）
-    username = db.Column(db.String(80), unique=True, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # ユーザー名は一意・必須（MySQL なので長さ必須。80文字まで）。Mapped[str] = NOT NULL
+    username: Mapped[str] = mapped_column(db.String(80), unique=True)
     # ハッシュ化したパスワードを保存（ハッシュは長いので255文字。平文は絶対入れない）
-    password = db.Column(db.String(255), nullable=False)
+    password: Mapped[str] = mapped_column(db.String(255))
 
     # 1ユーザーが複数 Post を持つ（1対多）
-    posts = db.relationship("Post", back_populates="author")
+    posts: Mapped[list[Post]] = relationship(back_populates="author")
 
 
-class Post(db.Model):
+class Post(Base):
     __tablename__ = "post"
 
-    id = db.Column(db.Integer, primary_key=True)
-    # TODO(1): user.id を参照する外部キー。NULL 不可にする
-    author_id = ...
+    id: Mapped[int] = mapped_column(primary_key=True)
+    author_id: Mapped[int] = ...  # TODO(1): user.id を参照する外部キー
     # 作成日時。デフォルトで現在時刻（UTC）を入れる
-    created = db.Column(
-        db.DateTime, nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-    )
+    created: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     # タイトルも長さ必須（255文字）。本文は長文なので Text 型（長さ指定不要）
-    title = db.Column(db.String(255), nullable=False)
-    body = db.Column(db.Text, nullable=False, default="")
+    title: Mapped[str] = mapped_column(db.String(255))
+    body: Mapped[str] = mapped_column(db.Text, default="")
 
     # Post 側から著者(User)を辿れるようにする
-    author = db.relationship("User", back_populates="posts")
+    author: Mapped[User] = relationship(back_populates="posts")
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """JSON レスポンス用の dict に変換する（Jinja テンプレートの代わり）。"""
         # TODO(2): id / title / body / created(ISO文字列) / author_id / username を返す
         return ...
 ```
 
+> 💡補足: SQLAlchemy 2.0 のタイプ付き記法（`Mapped[]` / `mapped_column`）を使うと `post.title` が `str` と型で分かり、**mypy**（型チェッカー）の恩恵（補完・型エラー検出・安全なリファクタ）が受けられます。`Mapped[int]` は NOT NULL、`Mapped[X | None]` なら NULL 可、という対応です。モデルは `db.Model` ではなく **`Base`（`DeclarativeBase`）を直接継承**します——これが SQLAlchemy 2.0 の推奨スタイルで、型チェッカーがモデルを正確に解釈できます。
+
 <details><summary>解答例（TODO(1) と TODO(2)）</summary>
 
 ```python
     # TODO(1)
-    author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    author_id: Mapped[int] = mapped_column(db.ForeignKey("user.id"))
 
     # TODO(2)
-    def to_dict(self):
+    def to_dict(self) -> dict:
         return {
             "id": self.id,
             "title": self.title,
@@ -105,14 +114,14 @@ class Post(db.Model):
 
 ```python
 @click.command("init-db")
-def init_db_command():
+def init_db_command() -> None:
     """既存データを消して、モデルからテーブルを作り直す。"""
     db.drop_all()
     db.create_all()
     click.echo("Initialized the database.")
 
 
-def init_app(app):
+def init_app(app: Flask) -> None:
     # 拡張をこのアプリに結び付ける
     db.init_app(app)
     # `flask init-db` を使えるように登録
@@ -137,19 +146,19 @@ def init_app(app):
 
 **モデルクラス = テーブル定義**
 ```python
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, unique=True, nullable=False)
+class User(Base):
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(db.String(80), unique=True)
 ```
 元記事の `CREATE TABLE user (id INTEGER PRIMARY KEY ..., username TEXT UNIQUE NOT NULL, ...)` と**一対一で対応**します。
-`unique=True` = `UNIQUE`、`nullable=False` = `NOT NULL`。SQL を Python クラスで書いている、と捉えてください。
+`mapped_column` が旧来の `db.Column` を置き換えます。`unique=True` = `UNIQUE`、そして `Mapped[str]`（非 Optional）= `NOT NULL`（`Mapped[str | None]` なら NULL 可）。SQL を Python クラスで書いている、と捉えてください。
 
-> 🔗 **Django との接続**: `db.Column(...)` は Django の `models.CharField(...)` に相当。`db.relationship` は Django の `ForeignKey` の逆参照（`related_name`）に近い。「モデル＝テーブル」の発想はそのままです。
+> 🔗 **Django との接続**: `mapped_column(...)` は Django の `models.CharField(...)` に相当。`relationship` は Django の `ForeignKey` の逆参照（`related_name`）に近い。「モデル＝テーブル」の発想はそのままです。
 
 **リレーション**
 ```python
-posts = db.relationship("Post", back_populates="author")   # User 側
-author = db.relationship("User", back_populates="posts")    # Post 側
+posts: Mapped[list[Post]] = relationship(back_populates="author")   # User 側
+author: Mapped[User] = relationship(back_populates="posts")          # Post 側
 ```
 元記事は一覧取得で毎回 `JOIN user u ON p.author_id = u.id` を手書きしていました。
 SQLAlchemy では `post.author.username` と**属性アクセスするだけ**で著者名が取れます（`to_dict()` で使用）。JOIN は ORM が裏でやってくれます。

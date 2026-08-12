@@ -212,4 +212,4 @@ docker compose ps
 
 ---
 
-準備ができたら [Step 1: アプリケーションファクトリ](./01-application-factory.md) へ。以降のコマンドは `uv run ...`、DB は Docker の MySQL を使います。
+準備ができたら [Step 0.5: クエリログ整形 & Zed デバッグ](./00.5-debug-and-query-logs.md) へ（アプリを書く前に開発の「見る道具」を仕込みます）。以降のコマンドは `uv run ...`、DB は Docker の MySQL を使います。

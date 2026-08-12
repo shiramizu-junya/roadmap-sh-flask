@@ -35,9 +35,12 @@ TEST_DATABASE_URL=mysql+pymysql://flaskr:flaskr@localhost:3306/flaskr_test?chars
 
 ```python
 import os
+from collections.abc import Iterator
 
 import pytest
 from dotenv import load_dotenv
+from flask import Flask
+from flask.testing import FlaskClient
 from werkzeug.security import generate_password_hash
 
 from flaskr import create_app
@@ -48,7 +51,7 @@ load_dotenv()
 
 
 @pytest.fixture
-def app():
+def app() -> Iterator[Flask]:
     # テスト専用の MySQL データベース(flaskr_test)に接続する
     app = create_app({
         "TESTING": True,
@@ -75,16 +78,16 @@ def app():
 
 
 @pytest.fixture
-def client(app):
+def client(app: Flask) -> FlaskClient:
     return app.test_client()
 
 
 class AuthActions:
     """ログイン/ログアウトを毎回書かずに済ませるヘルパー。"""
-    def __init__(self, client):
+    def __init__(self, client: FlaskClient) -> None:
         self._client = client
 
-    def login(self, username="test", password="test"):
+    def login(self, username: str = "test", password: str = "test"):
         return self._client.post(
             "/auth/login", json={"username": username, "password": password}
         )
@@ -94,7 +97,7 @@ class AuthActions:
 
 
 @pytest.fixture
-def auth(client):
+def auth(client: FlaskClient) -> AuthActions:
     return AuthActions(client)
 ```
 
@@ -148,16 +151,18 @@ source = ["flaskr"]
 
 ```python
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
 
 from flaskr.models import db, User
 
 
-def test_register(client, app):
+def test_register(client: FlaskClient, app: Flask) -> None:
     res = client.post("/auth/register", json={"username": "a", "password": "a"})
     assert res.status_code == 201
 
     with app.app_context():
-        assert User.query.filter_by(username="a").first() is not None
+        assert db.session.scalar(db.select(User).filter_by(username="a")) is not None
 
 
 @pytest.mark.parametrize(("username", "password", "message"), (
@@ -165,13 +170,13 @@ def test_register(client, app):
     ("a", "", "Password is required."),
     ("test", "test", "already registered"),
 ))
-def test_register_validate(client, username, password, message):
+def test_register_validate(client: FlaskClient, username: str, password: str, message: str) -> None:
     res = client.post("/auth/register", json={"username": username, "password": password})
     assert res.status_code == 400
     assert message in res.get_json()["error"]
 
 
-def test_login(client, auth):
+def test_login(client: FlaskClient, auth) -> None:
     assert auth.login().status_code == 200
     res = client.get("/auth/me")
     assert res.get_json() == {"id": 1, "username": "test"}
@@ -181,13 +186,13 @@ def test_login(client, auth):
     ("a", "test", "Incorrect username."),
     ("test", "a", "Incorrect password."),
 ))
-def test_login_bad(auth, username, password, message):
+def test_login_bad(auth, username: str, password: str, message: str) -> None:
     res = auth.login(username, password)
     assert res.status_code == 400
     assert message in res.get_json()["error"]
 
 
-def test_logout(client, auth):
+def test_logout(client: FlaskClient, auth) -> None:
     auth.login()
     auth.logout()
     assert client.get("/auth/me").get_json() == {"user": None}
@@ -198,11 +203,13 @@ def test_logout(client, auth):
 
 ```python
 import pytest
+from flask import Flask
+from flask.testing import FlaskClient
 
 from flaskr.models import db, Post
 
 
-def test_index(client):
+def test_index(client: FlaskClient) -> None:
     res = client.get("/posts")
     titles = [p["title"] for p in res.get_json()]
     assert "test title" in titles
@@ -213,13 +220,13 @@ def test_index(client):
     ("put", "/posts/1"),
     ("delete", "/posts/1"),
 ))
-def test_login_required(client, method_path):
+def test_login_required(client: FlaskClient, method_path: tuple[str, str]) -> None:
     method, path = method_path
     res = getattr(client, method)(path, json={"title": "x"})
     assert res.status_code == 401
 
 
-def test_author_required(app, client, auth):
+def test_author_required(app: Flask, client: FlaskClient, auth) -> None:
     # 記事1の著者を other(id=2) に変える
     with app.app_context():
         post = db.session.get(Post, 1)
@@ -232,21 +239,21 @@ def test_author_required(app, client, auth):
 
 
 @pytest.mark.parametrize("path", ("/posts/999",))
-def test_exists_required(client, auth, path):
+def test_exists_required(client: FlaskClient, auth, path: str) -> None:
     auth.login()
     assert client.put(path, json={"title": "x"}).status_code == 404
     assert client.delete(path).status_code == 404
 
 
-def test_create(client, auth, app):
+def test_create(client: FlaskClient, auth, app: Flask) -> None:
     auth.login()
     res = client.post("/posts", json={"title": "created", "body": ""})
     assert res.status_code == 201
     with app.app_context():
-        assert Post.query.count() == 2
+        assert db.session.scalar(db.select(db.func.count()).select_from(Post)) == 2
 
 
-def test_update(client, auth, app):
+def test_update(client: FlaskClient, auth, app: Flask) -> None:
     auth.login()
     res = client.put("/posts/1", json={"title": "updated", "body": ""})
     assert res.status_code == 200
@@ -254,7 +261,7 @@ def test_update(client, auth, app):
         assert db.session.get(Post, 1).title == "updated"
 
 
-def test_delete(client, auth, app):
+def test_delete(client: FlaskClient, auth, app: Flask) -> None:
     auth.login()
     res = client.delete("/posts/1")
     assert res.status_code == 204
@@ -266,15 +273,17 @@ def test_delete(client, auth, app):
 <details><summary>解答例（tests/test_factory.py）</summary>
 
 ```python
+from flask.testing import FlaskClient
+
 from flaskr import create_app
 
 
-def test_config():
+def test_config() -> None:
     assert not create_app().testing
     assert create_app({"TESTING": True}).testing
 
 
-def test_hello(client):
+def test_hello(client: FlaskClient) -> None:
     res = client.get("/hello")
     assert res.data == b"Hello, World!"
 ```

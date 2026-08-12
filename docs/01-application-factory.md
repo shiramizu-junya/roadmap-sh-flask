@@ -1,6 +1,6 @@
 # Step 1: アプリケーションファクトリ
 
-← [目次に戻る](./README.md) ／ 次: [Step 2](./02-database-sqlalchemy.md)
+← [Step 0.5](./00.5-debug-and-query-logs.md) ／ [目次](./README.md) ／ 次: [Step 2](./02-database-sqlalchemy.md)
 
 ## 🎯 目的
 
@@ -45,7 +45,7 @@ import os
 from flask import Flask
 
 
-def create_app(test_config=None):
+def create_app(test_config: dict | None = None) -> Flask:
     # アプリ本体を生成・設定する「ファクトリ関数」
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
@@ -62,9 +62,14 @@ def create_app(test_config=None):
     # instance フォルダ（任意の追加設定などを置ける場所）が無ければ作る
     os.makedirs(app.instance_path, exist_ok=True)
 
+    # デバッグ起動時（--debug）だけ、SQL 整形ログを有効化する（Step 0.5 で用意した仕組み）
+    if app.debug:
+        from . import sql_debug
+        sql_debug.enable()
+
     # 動作確認用の最小ルート
     @app.route("/hello")
-    def hello():
+    def hello() -> str:
         return "Hello, World!"
 
     return app
@@ -106,6 +111,16 @@ if test_config is not None:
 os.makedirs(app.instance_path, exist_ok=True)
 ```
 Flask は `instance/` を自動作成しません。任意の追加設定を置ける場所として確保しておきます（MySQL を使うので、元記事のように DB ファイルを置く用途ではありません）。
+
+**④ SQL 整形ログを有効化する（デバッグ時のみ）**
+```python
+if app.debug:
+    from . import sql_debug
+    sql_debug.enable()
+```
+[Step 0.5](./00.5-debug-and-query-logs.md) で作った `flaskr/sql_debug.py` を、`--debug` 起動時だけ有効化します。これで Step 2 以降、アプリが発行する SQL が**整形＋実行時間つき**でターミナルに流れ、「今どんなクエリが走ったか」を観測しながら開発できます。`app.debug` ガードにより、テストや本番では静かなままです。
+
+> ⚠️ `flaskr/sql_debug.py` が無いと `ImportError` になります。先に [Step 0.5](./00.5-debug-and-query-logs.md) を済ませてください（まだなら、この `if app.debug:` ブロックを一旦コメントアウトして進めてもOK）。
 
 **④ 動作確認用ルート**
 ```python

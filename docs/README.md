@@ -97,6 +97,10 @@ Flask 公式チュートリアルの「Flaskr（ブログアプリ）」を題�
 | `cryptography` | MySQL 8 の認証方式に必要（PyMySQL が内部で使用） |
 | `python-dotenv` | `.env` から設定を自動読み込み |
 | `pytest`（開発用） | テスト |
+| `sqlparse`（開発用） | SQL クエリログの整形表示（[Step 0.5](./00.5-debug-and-query-logs.md)） |
+| `debugpy`（開発用） | Zed でのブレークポイントデバッグ（[Step 0.5](./00.5-debug-and-query-logs.md)） |
+| `apiflask`（発展） | OpenAPI 自動生成 + Swagger UI（[Step 7](./07-openapi-and-admin.md)。`Flask` を置き換え） |
+| `flask-admin`（発展） | モデルから管理画面を自動生成（[Step 7](./07-openapi-and-admin.md)） |
 
 ---
 
@@ -170,11 +174,16 @@ cd ..
 > ├── docker-compose.yml   ← MySQL の起動定義（Step0）
 > ├── docker/
 > │   └── initdb/01-init.sql  ← テスト用DBを作るSQL（Step0）
+> ├── .zed/
+> │   └── debug.json       ← Zed のデバッグ設定（Step0.5）
 > ├── flaskr/              ← Flask アプリ本体（Step1〜4で書く）
 > │   ├── __init__.py      ← アプリケーションファクトリ
+> │   ├── sql_debug.py     ← SQLクエリログ整形（Step0.5）
 > │   ├── models.py        ← SQLAlchemy モデル
 > │   ├── auth.py          ← 認証 Blueprint
-> │   └── blog.py          ← 記事 Blueprint
+> │   ├── blog.py          ← 記事 Blueprint
+> │   ├── schemas.py       ← APIFlask スキーマ（Step7・発展）
+> │   └── admin.py         ← Flask-Admin 管理画面（Step7・発展）
 > ├── tests/               ← pytest（Step5で書く）
 > └── frontend/            ← React（Step6で連携）
 > ```
@@ -190,12 +199,17 @@ cd ..
 | Step | ファイル | 内容 | 提示量 |
 |---|---|---|---|
 | 0 | [00-docker-uv-mysql.md](./00-docker-uv-mysql.md) | 環境の土台（uv / Docker / MySQL の入門） | 読み物 |
+| 0.5 | [00.5-debug-and-query-logs.md](./00.5-debug-and-query-logs.md) | **クエリログ整形表示 & Zed ブレークポイント**（アプリ作成前に仕込む） | 設定 |
 | 1 | [01-application-factory.md](./01-application-factory.md) | アプリケーションファクトリと最初のルート | 写経（完成形） |
 | 2 | [02-database-sqlalchemy.md](./02-database-sqlalchemy.md) | SQLAlchemy でモデル定義・DB 初期化 | 写経〜一部穴埋め |
 | 3 | [03-auth-api.md](./03-auth-api.md) | 認証 API（登録・ログイン・ログアウト・ガード） | 穴埋め（`# TODO`） |
 | 4 | [04-blog-api.md](./04-blog-api.md) | 記事 CRUD API（認可付き） | 要件のみ→自力 |
 | 5 | [05-testing.md](./05-testing.md) | pytest でテスト | 要件のみ→自力 |
 | 6 | [06-frontend-and-wrapup.md](./06-frontend-and-wrapup.md) | React 連携・つまずき・まとめ・**宿題**・発展 | — |
+| 7 | [07-openapi-and-admin.md](./07-openapi-and-admin.md) | **発展**: OpenAPI/Swagger UI（APIFlask）& 管理画面（Flask-Admin） | 発展（任意） |
+| 付録A | [appendix-a-basics.md](./appendix-a-basics.md) | **Python/Flask/SQLAlchemy の基礎お作法**（`models.py`/`__init__.py` を1行ずつ精読） | 参照（初学者向け） |
+
+> 🔰 **Flask / SQLAlchemy が初めての方へ**: 本編で「Python の書き方が分からない」と感じたら [付録A](./appendix-a-basics.md) を先に読んでください。型ヒント・クラス・デコレータ・`Mapped[]` などの記法を、中心ファイル2つで丁寧に解説しています。
 
 各ステップには必ず次が入っています:
 - 🎯 **目的** と「**核 / 補足**」の区別
