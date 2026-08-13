@@ -44,3 +44,9 @@ docker-compose.override.yml
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+
+# ===== curl のクッキー保存ファイル（-c/-b で作るセッション jar。ローカル限定） =====
+cookie*.txt
+*.cookies
+alice.txt
+bob.txt

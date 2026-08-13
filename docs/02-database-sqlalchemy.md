@@ -416,6 +416,81 @@ docker compose exec db mysql -u flaskr -pflaskr flaskr -e "DESCRIBE users;"
 
 ---
 
+## 2-6.5. 実行された SQL をログで見る（開発中のクエリ確認）
+
+**重要度**: 🟡 **読めればよい**（毎回は書かないが、デバッグ時に必ず使う）
+
+ORM は便利な反面、「今どんな SQL が実際に流れているか」が見えにくくなります。
+そこで**開発中だけ実行 SQL をログに出す**設定を入れておくと、`commit` のタイミングや **N+1 問題**（同じ SELECT が何度も飛ぶ）の発見に役立ちます。
+
+### まず前提：2種類のログは別物
+
+| ログの種類 | サーバーを動かしているターミナルに出る？ |
+|---|---|
+| **HTTP アクセスログ**（`127.0.0.1 - - "POST /posts HTTP/1.1" 201 -`） | ✅ 既定で出る（Flask 開発サーバーが出す） |
+| **実行 SQL** | ❌ **既定では出ない**。下の設定でオンにする |
+
+### 設定（`flaskr/__init__.py` に1行追加・差分）
+
+```python
+import os  # ファイル冒頭の import 群へ
+
+    # create_app の設定部分に追加
+    # 実行SQLをログ出力するか。環境変数 SQL_ECHO=1 のときだけ有効（本番では出さない）
+    app.config["SQLALCHEMY_ECHO"] = os.environ.get("SQL_ECHO") == "1"
+```
+
+### 🔬 構文解剖: `app.config["SQLALCHEMY_ECHO"] = os.environ.get("SQL_ECHO") == "1"`
+
+| 部品 | 読み方 | 意味 |
+|---|---|---|
+| `SQLALCHEMY_ECHO` | エコー | Flask-SQLAlchemy の設定キー。`True` にすると実行 SQL を標準出力へログする |
+| `os.environ` | オーエス エンヴァイロン | **環境変数**の辞書。プロセスに外から渡す設定値の入れ物 |
+| `.get("SQL_ECHO")` | — | 環境変数 `SQL_ECHO` を取り出す。無ければ `None` |
+| `== "1"` | — | 値が文字列 `"1"` のときだけ `True`。**環境変数は常に文字列**なので `== "1"` で判定する |
+
+**なぜ直接 `True` にせず環境変数で切り替えるか**: SQL ログは**開発中だけ**見たい。コードに `True` を直書きすると本番でも出てしまう。
+環境変数で「見たいときだけ `SQL_ECHO=1` を付けて起動」にすると、コードを変えずに ON/OFF できる。
+**既知スタックとの対応**: React の `import.meta.env.VITE_XXX` や Node の `process.env.XXX` と同じ「環境変数で挙動を切り替える」定石。`os.environ.get(...)` が `process.env.XXX` に相当。
+
+### 使い方（見たいときだけ ON）
+
+```bash
+# 通常起動（SQLは出ない）
+uv run flask --app flaskr run --port 5001
+
+# SQL を見たいときだけ SQL_ECHO=1 を付けて起動
+SQL_ECHO=1 uv run flask --app flaskr run --port 5001
+```
+
+`SQL_ECHO=1` を付けて記事を1件作成すると、こんな出力が同じターミナルに流れます:
+
+```
+INFO sqlalchemy.engine.Engine INSERT INTO posts (title, body, created, author_id) VALUES (%(title)s, %(body)s, %(created)s, %(author_id)s)
+INFO sqlalchemy.engine.Engine [generated in 0.00008s] {'title': '最初の記事', 'body': '本文', 'created': datetime.datetime(...), 'author_id': 1}
+INFO sqlalchemy.engine.Engine COMMIT
+```
+
+- 上段＝**SQL 文**、下段＝**実際に渡した値（パラメータ）**
+- `SELECT` / `INSERT` / `COMMIT` の順序が見えるので、「commit がいつ走ったか」「同じ SELECT が繰り返されていないか（N+1）」を確認できる
+
+### 🏢 実務メモ
+- `SQLALCHEMY_ECHO=True` は**開発専用**。本番で有効にすると、全 SQL がログに出て**性能が落ちる**うえ、**パラメータ（メールアドレス等の個人情報）がログに残る**危険がある。だから本番では必ず OFF にする（今回の環境変数方式なら、本番で `SQL_ECHO` を設定しなければ自動で OFF）。
+- ログの体裁やレベルを細かく制御したいときは、`SQLALCHEMY_ECHO` の代わりに `sqlalchemy.engine` ロガーを直接設定する:
+  ```python
+  import logging
+  logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+  ```
+  こうすると、アプリ全体のロギング設定（フォーマット・出力先・レベル）に SQL ログも乗せられる。実務ではこちらで JSON ログや集約基盤に流すことが多い。
+
+### ⚠️ やりがち
+> **やりがち**: デバッグのため `SQLALCHEMY_ECHO = True` を直書きし、そのまま本番にデプロイして大量ログ＆情報漏れを起こす。
+> **現場では**: ログのオン/オフは**環境変数や設定で外出し**し、コードに真偽値を直書きしない。
+
+> ⏭️ **後で回収**: ここで見えた **N+1 問題**（一覧で著者を1件ずつ引くと SELECT が記事数だけ飛ぶ）は、**Step 4** の一覧APIと **発展ステップ**で `joinedload` を使って解消する。SQL ログはその効果を目で確認する道具になる。
+
+---
+
 ## 2-7. ✅ 想起チェック
 
 <details><summary>Q1. モデルクラスが `db.Model` を継承すると何が起きる？</summary>
