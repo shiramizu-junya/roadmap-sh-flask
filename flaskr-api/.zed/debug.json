@@ -1,0 +1,23 @@
+[
+    {
+        // iTerm2 で debugpy を起動しておき、それに Zed が後から繋ぐ方式。
+        // iTerm2 コマンド:
+        //   uv run python -m debugpy --listen 5678 --wait-for-client \
+        //     -m flask --app flaskr run --no-reload --port 5001
+        "label": "Flask: 起動中サーバーにアタッチ",
+        "adapter": "Debugpy",
+        "request": "attach",
+        "connect": { "host": "127.0.0.1", "port": 5678 }
+    },
+    {
+        // iTerm2 を使わず、Zed 自身に Flask を起動させてデバッグする方式（確実）。
+        // サーバーは Zed のデバッグ内で :5001 に立つ。
+        "label": "Flask: Zedが起動してデバッグ",
+        "adapter": "Debugpy",
+        "request": "launch",
+        "module": "flask",
+        "cwd": "$ZED_WORKTREE_ROOT",
+        "env": { "FLASK_APP": "flaskr" },
+        "args": ["run", "--no-reload", "--port", "5001"]
+    }
+]

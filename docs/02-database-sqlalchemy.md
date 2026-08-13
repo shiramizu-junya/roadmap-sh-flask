@@ -42,61 +42,78 @@ flaskr-api/flaskr/
 **ファイル: `flaskr-api/flaskr/models.py`（全文）**
 
 ```python
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+# 型情報を持つ基底クラス（SQLAlchemy 2.0 スタイル）
+class Base(DeclarativeBase):
+    pass
+
 
 # DB拡張のインスタンス。まだアプリには結び付いていない（後で init_app で結ぶ）
-db = SQLAlchemy()
+db = SQLAlchemy(model_class=Base)
 
 
 class User(db.Model):
     __tablename__ = "users"
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
 
     # このユーザーが書いた記事たち（1対多のリレーション）
-    posts = db.relationship("Post", back_populates="author")
+    posts: Mapped[list["Post"]] = relationship(back_populates="author")
 
 
 class Post(db.Model):
     __tablename__ = "posts"
 
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(120), nullable=False)
-    body = db.Column(db.Text, nullable=False)
-    created = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    body: Mapped[str] = mapped_column(Text)
+    created: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(timezone.utc)
+    )
 
-    author_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    author = db.relationship("User", back_populates="posts")
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author: Mapped["User"] = relationship(back_populates="posts")
 ```
+
+> 🧠 **なぜ型つき（SQLAlchemy 2.0 スタイル）にするか**: 列を Python の型注釈（`Mapped[int]` 等）で書くと、
+> エディタ（Zed の basedpyright）が `user.username` を補完し、打ち間違いを保存前に赤線で教えてくれる。
+> 昔ながらの `db.Column(...)` 方式でも動くが、**型の恩恵（補完・検査）が消える**ので、この教材は 2.0 スタイルに統一する。
 
 ---
 
 ## 2-3. 🔬 構文解剖
 
-### 🔬 構文解剖: `from datetime import datetime`
+### 🔬 構文解剖: import 群
 
-| 部品 | 意味 |
+| 行 | 意味 |
 |---|---|
-| `datetime`（前） | 標準ライブラリの**モジュール名** |
-| `datetime`（後） | そのモジュールの中の**クラス名**（同名でまぎらわしいが別物） |
+| `from datetime import datetime, timezone` | `datetime` モジュールから `datetime` クラスと `timezone`（タイムゾーン）を取り出す。JS の `Date` に相当 |
+| `from flask_sqlalchemy import SQLAlchemy` | Flask 用の SQLAlchemy 統合。`db` を作る |
+| `from sqlalchemy import ForeignKey, String, Text` | 列の型（`String`/`Text`）と外部キー（`ForeignKey`）。**型つき方式では `db.String` ではなくこちらを直接 import する** |
+| `from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship` | 型つきモデルの4点セット。次で解剖する |
 
-つまり「`datetime` モジュールから `datetime` クラスを取り出す」。以降 `datetime.utcnow` のように使える。
-**既知スタックとの対応**: JS の `Date` に相当するクラスを import している。
+**既知スタックとの対応**: TS で「型と関数を名前付き import する」のと同じ。`from A import B, C` は「A から B と C を取り出す」。
 
-### 🔬 構文解剖: `db = SQLAlchemy()`
+### 🔬 構文解剖: `class Base(DeclarativeBase): pass` と `db = SQLAlchemy(model_class=Base)`
 
-| 部品 | 意味 |
-|---|---|
-| `SQLAlchemy()` | 拡張クラスを呼んでインスタンス化。**まだ特定のアプリには結び付いていない** |
-| `db` | これ以降、モデル定義(`db.Model`)やDB操作(`db.session`)の入口になるオブジェクト |
+| 部品 | 読み方 | 意味 |
+|---|---|---|
+| `class Base(DeclarativeBase):` | — | すべてのモデルの**親クラス**を自分で用意する。`DeclarativeBase` を継承すると「型情報を持つ ORM の土台」になる |
+| `pass` | パス | **「何もしない」を表すキーワード**。クラス本体が空のときの穴埋め。Python はブロックを空にできないので必ず要る |
+| `SQLAlchemy(model_class=Base)` | — | その `Base` を「モデルの基底」に指定して `db` を作る。以降 `db.Model` は `Base` を指す |
 
-**なぜアプリの外で作るか**: `db` をグローバルに1個作り、後で `db.init_app(app)` でアプリに結ぶ。
-こうすると `models.py`（モデル定義）と `__init__.py`（アプリ組み立て）を分離でき、循環インポートを避けられる。Step 1 で触れたファクトリの利点がここで効く。
-**既知スタックとの対応**: 「シングルトンの拡張インスタンスを作って後で初期化する」パターン。ORM を1箇所に集約する点は Prisma Client を1つ作って使い回すのに近い。
+**なぜ `Base` を自作するのか**: SQLAlchemy 2.0 の型つき方式（`Mapped`）を使うには、`DeclarativeBase` を継承した基底クラスが要る。`model_class=Base` で Flask-SQLAlchemy にそれを教える。
+**`pass` とは**: 「ここは意図的に空」と示す文。中身のないクラスや関数の体裁を保つために置く。JS の空 `{}` に近いが、Python は明示的に `pass` と書く。
+**なぜアプリの外で作るか**: `db` をグローバルに1個作り、後で `db.init_app(app)` でアプリに結ぶ。こうすると `models.py`（モデル定義）と `__init__.py`（組み立て）を分離でき、循環インポートを避けられる（Step 1 のファクトリの利点）。
+**既知スタックとの対応**: `db` は「シングルトンの拡張インスタンスを後で初期化する」パターン。Prisma Client を1つ作って使い回すのに近い。
 
 ### 🔬 構文解剖: `class User(db.Model):`
 
@@ -121,59 +138,75 @@ SQLAlchemy がクラス定義を読み取り、テーブルと列を対応付け
 **なぜ明示するか**: 省略すると SQLAlchemy がクラス名から自動命名するが、規則が分かりにくい。実務では**明示して複数形**にするのが読みやすい。
 **既知スタックとの対応**: Prisma の `@@map("users")` に近い。
 
-### 🔬 構文解剖: `id = db.Column(db.Integer, primary_key=True)`
+### 🔬 構文解剖: `id: Mapped[int] = mapped_column(primary_key=True)`
 
 | 部品 | 読み方 | 意味 |
 |---|---|---|
-| `id = ...` | — | クラス直下に書く**クラス属性**。これ1つが1つの**カラム（列）**になる |
-| `db.Column(...)` | カラム | 列を定義する関数 |
-| `db.Integer` | — | 列の**型**。整数。第1引数（位置引数） |
-| `primary_key=True` | — | **キーワード引数**。`名前=値` で渡す。「この列を主キーにする」 |
-| `True` | トゥルー | Python の真偽値。**先頭大文字**（`true` ではない） |
+| `id` | — | クラス直下に書く**クラス属性**。これ1つが1つの**カラム（列）**になる |
+| `: Mapped[int]` | マップト | **型注釈**。「この属性はDB列に対応し、Python では `int` として扱う」。`Mapped[...]` が「ORM列だよ」の印 |
+| `= mapped_column(...)` | マップトカラム | 実際の**列定義**。オプション（主キー・長さ・外部キー等）はここに書く |
+| `primary_key=True` | — | **キーワード引数**（`名前=値`）。この列を主キーにする |
 
+**`Mapped[int]` の効き目**: 型を書くと2つ効く。①`Integer` 型の列だと SQLAlchemy が**推論**するので `db.Integer` を書かなくてよい。②エディタ（basedpyright）が `user.id` を `int` として補完・検査する。
 **キーワード引数とは**: `primary_key=True` のように `名前=値` で渡す引数。位置に依存せず、何を指定しているか読んで分かる。
-**既知スタックとの対応**: 型付きの列宣言。Prisma の `id Int @id`、TypeORM の `@PrimaryGeneratedColumn()` に相当。
+**既知スタックとの対応**: TS の型付きプロパティ宣言に近い。Prisma の `id Int @id`、TypeORM の `@PrimaryGeneratedColumn()` に相当。
 **なぜ主キーを整数の id にするか**: 各行を一意に識別する列が要る。整数の自動採番が最も素直（MySQL では `AUTO_INCREMENT` になる）。
 
-### 🔬 構文解剖: 各カラムのオプション
+### 🔬 構文解剖: 各カラムの型とオプション（型つき方式の肝）
 
 ```python
-username = db.Column(db.String(80), unique=True, nullable=False)
+username: Mapped[str] = mapped_column(String(80), unique=True)
+body: Mapped[str] = mapped_column(Text)
 ```
 
 | 部品 | 意味 |
 |---|---|
-| `db.String(80)` | 可変長文字列。**最大80文字**。MySQL の `VARCHAR(80)` になる |
+| `Mapped[str]` | 文字列の列。**非NULL（NOT NULL）を型で表現**するので、`nullable=False` を書かなくてよい |
+| `String(80)` | 可変長文字列。最大80文字。MySQL の `VARCHAR(80)`。`str` は長さが要るので**型を明示して渡す** |
+| `Text` | 長い文章用の型（`body` で使用）。`String` と違い長さ上限を実質気にしない |
 | `unique=True` | この列は**重複禁止**（同じ username を2人持てない） |
-| `nullable=False` | **NULL 禁止**＝必須列。空では保存できない |
-| `db.Text` | 長い文章用の型（`body` で使用）。`String` と違い長さ上限を実質気にしない |
-| `db.DateTime` | 日時型 |
-| `default=datetime.utcnow` | 値未指定時のデフォルト。**`utcnow` に `()` を付けていない**点に注意（下記） |
+| （NULL を許可したいとき） | `Mapped[str \| None]` と書く。`\| None` を付けた列だけ NULL 可になる |
 
-**`default=datetime.utcnow`（カッコ無し）の意味**: `datetime.utcnow()` と**呼ばず**、関数そのものを渡している。
-こうすると「行を挿入する**その瞬間**に `utcnow()` が呼ばれて現在時刻が入る」。もし `datetime.utcnow()` と書くと**アプリ起動時刻**が固定で入ってしまう。「関数を渡す」か「呼んだ結果を渡す」かで挙動が変わる典型例。
-**既知スタックとの対応**: JS でいう `default: Date.now`（関数参照）と `default: Date.now()`（即時評価）の違いと同じ。
+**型つき方式の最重要ルール**: `Mapped[str]`（非Optional）＝**NOT NULL**、`Mapped[str \| None]`＝**NULL可**。
+つまり **`nullable` は型で決まる**ので、原則 `nullable=False` は書かない。旧方式（`db.Column(..., nullable=False)`）から来るとここが一番の違い。
+**なぜ `int` は型省略でき `str` は `String(80)` が要るのか**: `int`→`Integer` は一意に決まるが、文字列は「最大何文字か」が決まらないと MySQL の列型を作れない。だから `str` は長さ付きで明示する。
 
-### 🔬 構文解剖: `author_id = db.Column(db.Integer, db.ForeignKey("users.id"), ...)`
+### 🔬 構文解剖: `created: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))`
+
+| 部品 | 読み方 | 意味 |
+|---|---|---|
+| `Mapped[datetime]` | — | 日時型の列 |
+| `default=...` | — | 値未指定時のデフォルト |
+| `lambda: ...` | ラムダ | **その場で作る名前なしの関数**。JS の `() => ...`（アロー関数）に相当 |
+| `datetime.now(timezone.utc)` | — | 現在の UTC 時刻を返す |
+
+**なぜ `lambda:` で包むのか**: `default` に「**呼んだ結果**」ではなく「**関数そのもの**」を渡すため。
+`default=datetime.now(timezone.utc)` と書くと**アプリ起動時刻**が固定で全行に入ってしまう。`lambda:` で包むと「行を挿入する**その瞬間**に呼ばれて」その時刻が入る。
+**既知スタックとの対応**: JS の `default: () => new Date()`（毎回評価）と `default: new Date()`（1回だけ評価）の違いと同じ。
+**💡 補足**: 昔の教材は `default=datetime.utcnow`（関数参照）と書くが、`utcnow` は Python 3.12 以降**非推奨**。この教材はタイムゾーン付きの `datetime.now(timezone.utc)` を `lambda` で渡す形に統一する。
+
+### 🔬 構文解剖: `author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))`
 
 | 部品 | 意味 |
 |---|---|
-| `db.ForeignKey("users.id")` | **外部キー**。この列が `users` テーブルの `id` 列を参照すると宣言 |
+| `ForeignKey("users.id")` | **外部キー**。この列が `users` テーブルの `id` 列を参照すると宣言 |
 | `"users.id"` | `テーブル名.列名`。`__tablename__` で付けた `"users"` を指す |
 
 **外部キーの意味**: 「この記事は、どのユーザーが書いたか」を `author_id` に相手の `id` を入れて表す（＝リレーション）。
 **既知スタックとの対応**: Prisma の `authorId Int` + `@relation(fields:[authorId], references:[id])`。RDB の1対多を表す標準手法。
 
-### 🔬 構文解剖: `posts = db.relationship("Post", back_populates="author")`
+### 🔬 構文解剖: `posts: Mapped[list["Post"]] = relationship(back_populates="author")`
 
 | 部品 | 意味 |
 |---|---|
-| `db.relationship(...)` | **DBの列ではなく**、Python 側で関連オブジェクトを辿るための「ナビゲーション」定義 |
-| `"Post"` | 関連する相手のモデル名（文字列で指定。まだ定義前でも文字列なら参照できる） |
+| `relationship(...)` | **DBの列ではなく**、Python 側で関連オブジェクトを辿るための「ナビゲーション」定義 |
+| `Mapped[list["Post"]]` | **1対多**を型で表す。「`Post` の**リスト**」＝ユーザーは複数記事を持つ。多対1側は `Mapped["User"]`（単数） |
+| `"Post"` | 相手のモデル名（文字列指定。まだ定義前でも文字列なら前方参照できる） |
 | `back_populates="author"` | 反対側(`Post.author`)と**双方向で対応付ける**。片方を変えると他方も整合する |
 
 **`relationship` と `ForeignKey` の違い**: `ForeignKey` は**DBに実在する列**（`author_id`）。`relationship` は**Python から `user.posts` や `post.author` と辿るための糖衣**でDBの列ではない。
-**既知スタックとの対応**: Prisma の `posts Post[]` / `author User @relation(...)` の、オブジェクトを辿る側に相当。
+**型で件数まで表す**: `Mapped[list["Post"]]`＝多側（複数）、`Mapped["User"]`＝1側（単数）。型を見ればリレーションの向きが分かる。
+**既知スタックとの対応**: Prisma の `posts Post[]` / `author User @relation(...)` に相当。
 **使い方の例**: `post.author.username`（記事から著者名）や `user.posts`（ユーザーの記事一覧）と、SQLを書かずにオブジェクトで辿れる。
 
 > 🧠 **この言語（SQLAlchemy）の考え方**: 「テーブル＝クラス、行＝インスタンス、列＝クラス属性」。
@@ -387,12 +420,17 @@ docker compose exec db mysql -u flaskr -pflaskr flaskr -e "DESCRIBE users;"
 
 <details><summary>Q1. モデルクラスが `db.Model` を継承すると何が起きる？</summary>
 
-そのクラスが「1つのDBテーブルを表すモデル」になり、SQLAlchemy がクラス属性(`db.Column`)を列に対応付ける（ORM マッピング）。
+そのクラスが「1つのDBテーブルを表すモデル」になり、SQLAlchemy がクラス属性(`mapped_column(...)`)を列に対応付ける（ORM マッピング）。
 </details>
 
-<details><summary>Q2. `default=datetime.utcnow` を `default=datetime.utcnow()` と書くと何が変わる？</summary>
+<details><summary>Q2. `default=lambda: datetime.now(timezone.utc)` を `default=datetime.now(timezone.utc)`（lambda なし）と書くと何が変わる？</summary>
 
-`()` 付きは**アプリ起動時に1回だけ評価**され、全行に同じ固定時刻が入ってしまう。`()` 無しは関数参照を渡すので、**行を挿入するたびに呼ばれて**その時刻が入る。
+`lambda` なしは**アプリ起動時に1回だけ評価**され、全行に同じ固定時刻が入ってしまう。`lambda:` で包むと関数を渡すので、**行を挿入するたびに呼ばれて**その時刻が入る。
+</details>
+
+<details><summary>Q2-b. `Mapped[str]` と `Mapped[str | None]` の違いは？</summary>
+
+`Mapped[str]`（非Optional）は **NOT NULL**、`Mapped[str | None]` は **NULL可**。型つき方式では `nullable` を型で表すので、`nullable=False` を個別に書かない。
 </details>
 
 <details><summary>Q3. 接続URLのホストを `db` ではなく `127.0.0.1` にするのはなぜ？</summary>
@@ -414,11 +452,12 @@ Flask はコンテナの外（PC上）で動くから。`ports: "3306:3306"` で
 
 合格ライン:
 
-- `db = SQLAlchemy()` をアプリの外で作っている
+- `class Base(DeclarativeBase)` を作り、`db = SQLAlchemy(model_class=Base)` をアプリの外で作っている
 - `User` / `Post` が `db.Model` を継承している
+- 各列が `名前: Mapped[型] = mapped_column(...)` の形（`Mapped[str]` は非NULL）
 - 各モデルに `__tablename__` と主キー `id` がある
-- `Post` に `author_id`（`ForeignKey("users.id")`）がある
-- 双方向の `db.relationship(... back_populates=...)` がある
+- `Post` に `author_id`（`mapped_column(ForeignKey("users.id"))`）がある
+- 双方向の `relationship(... back_populates=...)`（1対多は `Mapped[list["Post"]]`）がある
 
 さらに、`create_app` に DB を組み込む3点（`SQLALCHEMY_DATABASE_URI` の設定／`db.init_app(app)`／`init-db` コマンド）を、見ないで書けるか試します。
 
@@ -427,7 +466,8 @@ Flask はコンテナの外（PC上）で動くから。`ports: "3306:3306"` で
 ## まとめ
 
 - ORM は「**テーブル＝クラス / 行＝インスタンス / 列＝クラス属性**」で DB を Python で表す
-- `db = SQLAlchemy()` をアプリの外で作り、`db.init_app(app)` で後から結ぶ（ファクトリの型）
+- 列は **`名前: Mapped[型] = mapped_column(...)`**（SQLAlchemy 2.0 型つき方式）。`Mapped[str]`＝NOT NULL、`Mapped[str | None]`＝NULL可
+- `class Base(DeclarativeBase)` + `db = SQLAlchemy(model_class=Base)` をアプリの外で作り、`db.init_app(app)` で後から結ぶ（ファクトリの型）
 - 接続は `mysql+pymysql://user:pass@127.0.0.1:3306/db` の1本のURL
 - `flask init-db` → `db.create_all()` でモデルからテーブルを作成（実務では後にマイグレーションへ）
 

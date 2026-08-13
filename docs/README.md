@@ -131,6 +131,7 @@ Step 0 で1つずつインストールします。今の時点で全部そろっ
 | [Step 5](./05-testing.md) | **テスト** — pytest とテストクライアント（テスト用 MySQL） | ✅ 公開中 |
 | [Step 6](./06-frontend.md) | **React + TypeScript フロント** — Cookie 付き fetch で API を叩く | ✅ 公開中 |
 | [Step 7](./07-wrapup.md) | つまずき集 / まとめ / **宿題（Lv1〜3）** / 発展 | ✅ 公開中 |
+| [発展](./08-schema-openapi.md) | **スキーマと OpenAPI** — spectree(Pydantic) で入出力検証 + Swagger UI + React 型の自動生成 | ✅ 公開中 |
 | [Appendix A](./appendix-a-python-basics.md) | **Python 基礎索引** — 本編で使う記号・文法の早見表 | ✅ 公開中 |
 
 > 👉 まずは [Step 0: 環境の土台](./00-env.md) から。Docker が初めてでも大丈夫なように、「なぜ使うのか」から説明します。
