@@ -30,8 +30,10 @@ def create_app():
 
     # ★追加：auth Blueprint を登録
     from .auth import bp as auth_bp
+    from .posts import bp as posts_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(posts_bp)
 
     @app.cli.command("init-db")
     def init_db():
