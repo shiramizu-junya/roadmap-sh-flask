@@ -35,7 +35,12 @@ docker-compose.override.yml
 .DS_Store
 .vscode/
 .idea/
-.zed/
+# Zed の設定は個人環境依存なので除外。ただし debug.json は
+# docs/00-env.md で教材の一部として配布するため例外にする。
+# 注意: `.zed/` とディレクトリごと除外すると `!` で再包含できない。
+# `.zed/*`（中身だけ除外）にするのが必須。
+**/.zed/*
+!**/.zed/debug.json
 *.swp
 *~
 

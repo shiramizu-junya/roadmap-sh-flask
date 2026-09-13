@@ -1,11 +1,15 @@
 """動作確認用のシードデータを投入するスクリプト。
 
+docs/04-blog-api.md の 4-1（一覧・作成・取得）の動作確認用。
+アプリ本体（flaskr/）には手を入れず、外から DB に入れるだけの補助スクリプト。
+
 使い方:
     uv run python seed.py            # ユーザーを用意し、記事が0件なら3件入れる
     uv run python seed.py --reset    # 記事を全削除してから3件入れ直す
 
-docs/04-blog-api.md の 4-1（一覧・作成・取得）の動作確認用。
-アプリ本体（flaskr/）には手を入れず、外から DB に入れるだけの使い捨てスクリプト。
+⚠️ 開発用 DB 専用（docker-compose.yml で起動したローカル MySQL 向け）。
+   --reset は posts テーブルを全件 DELETE し、AUTO_INCREMENT を 1 に戻す。
+   本番やステージングの DB に向けて実行しないこと。
 """
 
 import sys

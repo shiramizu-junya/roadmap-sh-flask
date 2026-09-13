@@ -279,6 +279,22 @@ def destroy(post_id):
 
 前提: サーバー起動、`alice` で登録済み（Step 3）。
 
+### 💡 補足: シードデータを一発で用意する
+
+一覧の並び順や `author` の切り替わりを確認するには記事が複数あった方が分かりやすいです。
+毎回 curl で作るのが面倒なら、同梱の `flaskr-api/seed.py` を使えます。
+
+```bash
+uv run python seed.py            # alice / bob と記事3件を用意（記事が0件のときだけ投入）
+uv run python seed.py --reset    # 記事を全削除し、id を 1 から振り直して入れ直す
+```
+
+- `created` を 30 分ずつずらしてあるので、`order_by(Post.created.desc())` が効いているか目で確認できる
+- 著者を `alice` / `bob` に分けてあるので、一覧の `author` が記事ごとに変わるのが見える
+- `--reset` は id を 1 から振り直すので、下の `GET /posts/1` がそのまま使える
+
+> ⚠️ `--reset` は `posts` を全件削除します。**ローカルの開発用 MySQL 専用**です。
+
 ### 🔮 実行前に予想しよう
 1. ログインせずに `POST /posts` すると何番？
 2. `alice` の記事を、別ユーザー `bob` で `PUT` すると何番？
